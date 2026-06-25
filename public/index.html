@@ -118,6 +118,29 @@
   }
   .link:hover { background: #f0ede4; }
 
+  .ghlbtn {
+    font-size: 13px; font-weight: 700; padding: 9px 14px;
+    background: #5b3fd6; color: #fff; border: none;
+    border-radius: 9px; cursor: pointer;
+  }
+  .ghlbtn:hover { background: #4a32b0; }
+  .ghlbtn:disabled { opacity: .6; cursor: wait; }
+  .card.sending { opacity: .55; }
+  .card.sent {
+    animation: slideout .4s forwards;
+  }
+  @keyframes slideout {
+    to { opacity: 0; transform: translateX(20px); height: 0; margin: 0; padding: 0; overflow: hidden; }
+  }
+  .toast {
+    position: fixed; bottom: 22px; left: 50%; transform: translateX(-50%);
+    background: var(--moss-deep); color: #fff; padding: 12px 20px;
+    border-radius: 10px; font-size: 14px; font-weight: 600; z-index: 50;
+    box-shadow: 0 6px 24px rgba(0,0,0,.2); opacity: 0; transition: opacity .2s;
+  }
+  .toast.show { opacity: 1; }
+  .toast.err { background: var(--clay); }
+
   .empty { text-align: center; color: var(--mute); padding: 40px 0; font-size: 14px; }
 
   .market-banner {
@@ -261,7 +284,60 @@
     leads.forEach((l, i) => {
       const btn = document.getElementById("copy-" + i);
       if (btn) btn.onclick = () => copyPhone(l.phoneRaw || l.phone, btn);
+      const ghl = document.getElementById("ghl-" + i);
+      if (ghl) ghl.onclick = () => sendToGHL(l, i);
     });
+  }
+
+  function showToast(msg, isErr) {
+    let t = document.getElementById("toast");
+    if (!t) {
+      t = document.createElement("div");
+      t.id = "toast";
+      document.body.appendChild(t);
+    }
+    t.className = "toast" + (isErr ? " err" : "");
+    t.textContent = msg;
+    requestAnimationFrame(() => t.classList.add("show"));
+    setTimeout(() => t.classList.remove("show"), 2600);
+  }
+
+  async function sendToGHL(lead, i) {
+    const ghl = document.getElementById("ghl-" + i);
+    const card = ghl ? ghl.closest(".card") : null;
+    if (!ghl || !card) return;
+    ghl.disabled = true;
+    ghl.textContent = "Sending…";
+    card.classList.add("sending");
+    try {
+      const res = await fetch("/api/send-to-ghl", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          name: lead.name,
+          phone: lead.phone,
+          address: lead.address,
+          website: lead.website || ""
+        })
+      });
+      const data = await res.json();
+      if (!res.ok || !data.ok) {
+        card.classList.remove("sending");
+        ghl.disabled = false;
+        ghl.textContent = "→ Send to GHL";
+        showToast(data.error || "Couldn't send to GHL", true);
+        return;
+      }
+      // Success: remove the card from the list.
+      showToast("✓ Sent to GHL — " + lead.name);
+      card.classList.add("sent");
+      setTimeout(() => card.remove(), 420);
+    } catch (e) {
+      card.classList.remove("sending");
+      ghl.disabled = false;
+      ghl.textContent = "→ Send to GHL";
+      showToast("Network error sending to GHL", true);
+    }
   }
 
   function cardHTML(l, i) {
@@ -293,6 +369,7 @@
       </div>
       <div class="actions">
         <button class="copybtn" id="copy-${i}">📋 <span class="phone-text">${esc(l.phone || "No phone")}</span></button>
+        <button class="ghlbtn" id="ghl-${i}">→ Send to GHL</button>
         ${l.mapsUrl ? `<a class="link" href="${esc(l.mapsUrl)}" target="_blank" rel="noopener">Google</a>` : ""}
         ${l.website ? `<a class="link" href="${esc(l.website)}" target="_blank" rel="noopener">Website</a>` : ""}
       </div>
