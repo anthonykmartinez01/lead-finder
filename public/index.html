@@ -1,0 +1,316 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Lead Finder — North TX Home Services</title>
+<style>
+  :root {
+    --ink: #14201b;
+    --paper: #f6f4ee;
+    --card: #ffffff;
+    --moss: #2e8b62;
+    --moss-deep: #0f3d2e;
+    --clay: #c25c34;
+    --gold: #c79a3b;
+    --line: #e2ddd1;
+    --mute: #6f6a5e;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: 'Inter', 'Helvetica Neue', Arial, sans-serif;
+    background: var(--paper);
+    color: var(--ink);
+    line-height: 1.45;
+    padding: 0 16px 80px;
+  }
+  .wrap { max-width: 820px; margin: 0 auto; }
+
+  header {
+    padding: 28px 0 18px;
+    border-bottom: 2px solid var(--moss-deep);
+    margin-bottom: 22px;
+  }
+  .eyebrow {
+    font-size: 11px; letter-spacing: 2.5px; text-transform: uppercase;
+    color: var(--moss); font-weight: 700;
+  }
+  h1 {
+    font-size: 30px; letter-spacing: -0.8px; color: var(--moss-deep);
+    margin: 4px 0 6px; font-weight: 800;
+  }
+  .tagline { color: var(--mute); font-size: 14px; max-width: 560px; }
+
+  .searchbar {
+    display: flex; gap: 8px; margin: 22px 0 8px; flex-wrap: wrap;
+  }
+  .searchbar input {
+    flex: 1; min-width: 220px;
+    padding: 14px 16px; font-size: 16px;
+    border: 1.5px solid var(--line); border-radius: 10px;
+    background: var(--card); color: var(--ink);
+  }
+  .searchbar input:focus { outline: 2px solid var(--moss); border-color: var(--moss); }
+  .searchbar button {
+    padding: 14px 22px; font-size: 15px; font-weight: 700;
+    background: var(--moss-deep); color: #fff; border: none;
+    border-radius: 10px; cursor: pointer; white-space: nowrap;
+  }
+  .searchbar button:hover { background: var(--moss); }
+  .searchbar button:disabled { opacity: 0.5; cursor: wait; }
+
+  .chips { display: flex; gap: 7px; flex-wrap: wrap; margin-bottom: 6px; }
+  .chip {
+    font-size: 12px; padding: 6px 11px; border-radius: 20px;
+    background: #ece7da; color: var(--moss-deep); border: none;
+    cursor: pointer; font-weight: 600;
+  }
+  .chip:hover { background: var(--moss); color: #fff; }
+
+  .status { font-size: 13px; color: var(--mute); margin: 14px 2px; min-height: 18px; }
+  .status.err { color: var(--clay); font-weight: 600; }
+
+  .card {
+    background: var(--card); border: 1px solid var(--line);
+    border-radius: 14px; padding: 16px 18px; margin-bottom: 14px;
+    position: relative; transition: box-shadow .15s;
+  }
+  .card:hover { box-shadow: 0 4px 18px rgba(15,61,46,0.10); }
+
+  .card-top { display: flex; justify-content: space-between; gap: 12px; align-items: flex-start; }
+  .biz-name { font-size: 18px; font-weight: 800; color: var(--moss-deep); letter-spacing: -0.3px; }
+  .biz-addr { font-size: 12.5px; color: var(--mute); margin-top: 2px; }
+
+  .score-badge {
+    flex-shrink: 0; text-align: center; min-width: 58px;
+    padding: 6px 8px; border-radius: 10px; color: #fff; font-weight: 800;
+  }
+  .score-badge .num { font-size: 22px; line-height: 1; }
+  .score-badge .lbl { font-size: 9px; letter-spacing: 1px; text-transform: uppercase; opacity: .9; }
+  .s-hot { background: var(--moss-deep); }
+  .s-warm { background: var(--moss); }
+  .s-mild { background: var(--gold); }
+
+  .stats { display: flex; gap: 16px; flex-wrap: wrap; margin: 12px 0 10px; }
+  .stat { font-size: 13px; }
+  .stat b { color: var(--ink); font-size: 15px; }
+  .stat span { color: var(--mute); display: block; font-size: 10.5px; text-transform: uppercase; letter-spacing: .8px; }
+
+  .flags { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 12px; }
+  .flag { font-size: 11.5px; padding: 4px 9px; border-radius: 6px; font-weight: 700; }
+  .f-none { background: #fbe9e1; color: var(--clay); }
+  .f-weak { background: #faf2dd; color: #8a6a16; }
+  .f-ok { background: #e8efe9; color: var(--moss-deep); }
+  .f-reason { background: #eef0f2; color: var(--mute); font-weight: 600; }
+
+  .actions { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  .copybtn {
+    font-size: 14px; font-weight: 700; padding: 10px 16px;
+    background: var(--moss); color: #fff; border: none; border-radius: 9px; cursor: pointer;
+    display: flex; align-items: center; gap: 7px;
+  }
+  .copybtn:hover { background: var(--moss-deep); }
+  .copybtn.done { background: var(--moss-deep); }
+  .phone-text { font-size: 16px; font-weight: 700; letter-spacing: .3px; }
+  .link {
+    font-size: 13px; color: var(--moss); text-decoration: none; font-weight: 600;
+    padding: 9px 12px; border: 1px solid var(--line); border-radius: 9px;
+  }
+  .link:hover { background: #f0ede4; }
+
+  .empty { text-align: center; color: var(--mute); padding: 40px 0; font-size: 14px; }
+
+  .market-banner {
+    border-radius: 14px; padding: 14px 18px; margin-bottom: 18px;
+    display: flex; align-items: center; gap: 16px; color: #fff;
+  }
+  .market-banner .mscore {
+    font-size: 34px; font-weight: 800; line-height: 1; flex-shrink: 0;
+  }
+  .market-banner .mtext { font-size: 13.5px; line-height: 1.4; }
+  .market-banner .mlabel { font-size: 16px; font-weight: 800; letter-spacing: -0.2px; }
+  .m-gold { background: linear-gradient(110deg, #0f3d2e, #2e8b62); }
+  .m-strong { background: linear-gradient(110deg, #1a5c43, #3a9a6f); }
+  .m-decent { background: linear-gradient(110deg, #8a6a16, #c79a3b); }
+  .m-tough { background: linear-gradient(110deg, #6b3a28, #c25c34); }
+
+  .market-pill {
+    font-size: 11px; padding: 4px 9px; border-radius: 6px; font-weight: 700;
+    display: inline-flex; align-items: center; gap: 4px;
+  }
+  .mp-gold { background: #e3efe9; color: var(--moss-deep); }
+  .mp-strong { background: #e8efe9; color: var(--moss-deep); }
+  .mp-decent { background: #faf2dd; color: #8a6a16; }
+  .mp-tough { background: #fbe9e1; color: var(--clay); }
+  .spinner {
+    display: inline-block; width: 14px; height: 14px; border: 2px solid #ffffff60;
+    border-top-color: #fff; border-radius: 50%; animation: spin .7s linear infinite;
+    vertical-align: -2px; margin-right: 6px;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  footer { margin-top: 30px; font-size: 11.5px; color: var(--mute); text-align: center; line-height: 1.6; }
+  @media (max-width: 480px) {
+    h1 { font-size: 24px; }
+    .stats { gap: 12px; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="eyebrow">Inside Prosper · Prospecting</div>
+    <h1>Lead Finder</h1>
+    <p class="tagline">Pulls active home-service businesses, filters for the ones worth calling, and ranks them by fit. Copy the number, drop it into Go High Level.</p>
+  </header>
+
+  <div class="searchbar">
+    <input id="q" type="text" placeholder="e.g. roofers in Prosper TX" autocomplete="off" />
+    <button id="go">Find leads</button>
+  </div>
+  <div class="chips" id="chips"></div>
+
+  <div class="status" id="status"></div>
+  <div id="results"></div>
+
+  <footer>
+    Hard filters: 4.5★+ · 10+ reviews · physical address · operational.<br>
+    Lead score weights longevity, the 20–100 review sweet spot, recent activity, and weak web presence (your opening).<br>
+    Market score blends city population (demand) with how open the competition is — high demand + beatable field = goldmine.<br>
+    Business age and search demand are estimated proxies, not exact figures.
+  </footer>
+</div>
+
+<script>
+  const TRADES = ["roofers","painters","plumbers","HVAC","landscapers","electricians","remodelers","concrete","fencing","garage doors"];
+  const AREA = "Prosper TX";
+  const chipWrap = document.getElementById("chips");
+  TRADES.forEach(t => {
+    const b = document.createElement("button");
+    b.className = "chip";
+    b.textContent = t;
+    b.onclick = () => { document.getElementById("q").value = `${t} in ${AREA}`; run(); };
+    chipWrap.appendChild(b);
+  });
+
+  const q = document.getElementById("q");
+  const go = document.getElementById("go");
+  const statusEl = document.getElementById("status");
+  const results = document.getElementById("results");
+
+  q.addEventListener("keydown", e => { if (e.key === "Enter") run(); });
+  go.addEventListener("click", run);
+
+  function scoreClass(s) { return s >= 75 ? "s-hot" : s >= 55 ? "s-warm" : "s-mild"; }
+  function scoreLabel(s) { return s >= 75 ? "HOT" : s >= 55 ? "WARM" : "OK"; }
+  function flagClass(f) { return f === "none" ? "f-none" : f === "weak" ? "f-weak" : "f-ok"; }
+  function flagText(f) {
+    return f === "none" ? "No website" : f === "weak" ? "Weak web presence" : f === "ok" ? "Has website" : "Website unknown";
+  }
+  function marketClass(s) { return s >= 75 ? "gold" : s >= 60 ? "strong" : s >= 45 ? "decent" : "tough"; }
+  function esc(s){ return (s||"").replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+
+  async function run() {
+    const query = q.value.trim();
+    if (!query) { statusEl.textContent = "Type a trade and city, e.g. “roofers in Prosper TX”."; return; }
+    go.disabled = true;
+    statusEl.className = "status";
+    statusEl.innerHTML = '<span class="spinner"></span>Searching Google…';
+    results.innerHTML = "";
+
+    try {
+      const res = await fetch("/api/leads", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ query })
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        statusEl.className = "status err";
+        statusEl.textContent = data.error + (data.detail ? " — " + data.detail.slice(0,140) : "");
+        go.disabled = false;
+        return;
+      }
+      render(data);
+    } catch (e) {
+      statusEl.className = "status err";
+      statusEl.textContent = "Couldn't reach the server. " + e.message;
+    }
+    go.disabled = false;
+  }
+
+  function render(data) {
+    const { leads, scanned, count, market } = data;
+    statusEl.className = "status";
+    statusEl.textContent = `Scanned ${scanned} · ${count} passed filters · sorted best-fit first.`;
+    if (!leads.length) {
+      results.innerHTML = '<div class="empty">No businesses cleared the filters for that search.<br>Try a nearby town or a different trade.</div>';
+      return;
+    }
+    const mc = marketClass(market.marketScore ?? market.score);
+    const mscore = market.score;
+    const banner = `
+      <div class="market-banner m-${mc}">
+        <div class="mscore">${mscore}</div>
+        <div class="mtext">
+          <div class="mlabel">${esc(market.label)} market</div>
+          ${esc(market.reason)}
+        </div>
+      </div>`;
+    results.innerHTML = banner + leads.map((l, i) => cardHTML(l, i)).join("");
+    leads.forEach((l, i) => {
+      const btn = document.getElementById("copy-" + i);
+      if (btn) btn.onclick = () => copyPhone(l.phoneRaw || l.phone, btn);
+    });
+  }
+
+  function cardHTML(l, i) {
+    const age = l.oldestReviewYearsAgo !== null ? `~${l.oldestReviewYearsAgo}yr` : "—";
+    const last = l.lastReviewDaysAgo !== null ? (l.lastReviewDaysAgo <= 90 ? "<90d" : l.lastReviewDaysAgo + "d") : "—";
+    const reasons = (l.scoreReasons || []).slice(0,3).map(r => `<span class="flag f-reason">${esc(r)}</span>`).join("");
+    return `
+    <div class="card">
+      <div class="card-top">
+        <div>
+          <div class="biz-name">${esc(l.name)}</div>
+          <div class="biz-addr">${esc(l.address)}</div>
+        </div>
+        <div class="score-badge ${scoreClass(l.score)}">
+          <div class="num">${l.score}</div>
+          <div class="lbl">${scoreLabel(l.score)}</div>
+        </div>
+      </div>
+      <div class="stats">
+        <div class="stat"><b>${l.rating.toFixed(1)}★</b><span>Rating</span></div>
+        <div class="stat"><b>${l.reviews}</b><span>Reviews</span></div>
+        <div class="stat"><b>${age}</b><span>Est. age</span></div>
+        <div class="stat"><b>${last}</b><span>Last review</span></div>
+      </div>
+      <div class="flags">
+        <span class="market-pill mp-${marketClass(l.marketScore)}">📍 ${esc(l.marketLabel)} market · ${l.marketScore}</span>
+        <span class="flag ${flagClass(l.websiteFlag)}">${flagText(l.websiteFlag)}</span>
+        ${reasons}
+      </div>
+      <div class="actions">
+        <button class="copybtn" id="copy-${i}">📋 <span class="phone-text">${esc(l.phone || "No phone")}</span></button>
+        ${l.mapsUrl ? `<a class="link" href="${esc(l.mapsUrl)}" target="_blank" rel="noopener">Google</a>` : ""}
+        ${l.website ? `<a class="link" href="${esc(l.website)}" target="_blank" rel="noopener">Website</a>` : ""}
+      </div>
+    </div>`;
+  }
+
+  async function copyPhone(num, btn) {
+    if (!num) return;
+    try {
+      await navigator.clipboard.writeText(num);
+      const orig = btn.innerHTML;
+      btn.classList.add("done");
+      btn.innerHTML = '✓ <span class="phone-text">Copied!</span>';
+      setTimeout(() => { btn.innerHTML = orig; btn.classList.remove("done"); }, 1400);
+    } catch {
+      btn.innerHTML = '<span class="phone-text">' + num + '</span>';
+    }
+  }
+</script>
+</body>
+</html>
