@@ -71,6 +71,44 @@ export default async (req: Request, _context: Context) => {
     return new Response(JSON.stringify({ error: "Missing business name" }), { status: 400 });
   }
 
+  // Extra detail for the call-prep note (all optional).
+  const rating = body.rating;
+  const reviews = body.reviews;
+  const age = body.oldestReviewYearsAgo;
+  const lastReview = body.lastReviewDaysAgo;
+  const websiteFlag: string = (body.websiteFlag ?? "").toString();
+  const score = body.score;
+  const scoreReasons: string[] = Array.isArray(body.scoreReasons) ? body.scoreReasons : [];
+  const marketLabel: string = (body.marketLabel ?? "").toString();
+  const marketScore = body.marketScore;
+  const marketReason: string = (body.marketReason ?? "").toString();
+  const mapsUrl: string = (body.mapsUrl ?? "").toString();
+
+  // Build a readable call-prep note.
+  function buildNote(): string {
+    const lines: string[] = ["LEAD FINDER — CALL PREP", ""];
+    if (rating != null && reviews != null) lines.push(`Rating: ${rating}\u2605  (${reviews} reviews)`);
+    const ageBits: string[] = [];
+    if (age != null) ageBits.push(`~${age} yrs in business (est.)`);
+    if (lastReview != null) ageBits.push(lastReview <= 90 ? "active review <90d ago" : `last review ${lastReview}d ago`);
+    if (ageBits.length) lines.push(ageBits.join("  \u00b7  "));
+    if (websiteFlag) {
+      const wf = websiteFlag === "none" ? "NO website (prime target)"
+        : websiteFlag === "weak" ? "Weak web presence (good target)"
+        : websiteFlag === "ok" ? "Has a real website" : "Website unknown";
+      lines.push(`Web: ${wf}`);
+    }
+    if (marketLabel && marketScore != null) lines.push(`Market: ${marketLabel} (${marketScore}) \u2014 ${marketReason}`);
+    if (score != null) lines.push(`Fit score: ${score}`);
+    if (scoreReasons.length) lines.push(`Why: ${scoreReasons.join(", ")}`);
+    lines.push("");
+    if (address) lines.push(`Address: ${address}`);
+    if (phone) lines.push(`Phone: ${phone}`);
+    if (website) lines.push(`Website: ${website}`);
+    if (mapsUrl) lines.push(`Google: ${mapsUrl}`);
+    return lines.join("\n");
+  }
+
   try {
     // 1. Resolve pipeline + stage IDs from their names.
     const resolved = await resolvePipelineStage(token, locationId);
@@ -110,6 +148,24 @@ export default async (req: Request, _context: Context) => {
     }
     const contactData = await contactRes.json();
     const contactId = contactData.contact?.id ?? contactData.id;
+
+    // 2b. Attach the call-prep note to the contact (best-effort; don't fail the whole send if it errors).
+    if (contactId) {
+      try {
+        await fetch(`${GHL_BASE}/contacts/${contactId}/notes`, {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${token}`,
+            Version: GHL_VERSION,
+            "Content-Type": "application/json",
+            Accept: "application/json",
+          },
+          body: JSON.stringify({ body: buildNote() }),
+        });
+      } catch {
+        // Note is a nice-to-have; ignore failures so the lead still lands.
+      }
+    }
 
     // 3. Create the opportunity in the chosen pipeline + stage.
     const oppRes = await fetch(`${GHL_BASE}/opportunities/`, {

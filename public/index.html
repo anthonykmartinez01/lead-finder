@@ -317,7 +317,18 @@
           name: lead.name,
           phone: lead.phone,
           address: lead.address,
-          website: lead.website || ""
+          website: lead.website || "",
+          rating: lead.rating,
+          reviews: lead.reviews,
+          oldestReviewYearsAgo: lead.oldestReviewYearsAgo,
+          lastReviewDaysAgo: lead.lastReviewDaysAgo,
+          websiteFlag: lead.websiteFlag,
+          score: lead.score,
+          scoreReasons: lead.scoreReasons,
+          marketLabel: lead.marketLabel,
+          marketScore: lead.marketScore,
+          marketReason: lead.marketReason,
+          mapsUrl: lead.mapsUrl
         })
       });
       const data = await res.json();
