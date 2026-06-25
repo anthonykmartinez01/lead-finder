@@ -11,6 +11,8 @@ interface Lead {
   reviews: number;
   oldestReviewYearsAgo: number | null;
   lastReviewDaysAgo: number | null;
+  maturity: "Established" | "Growing" | "Newer";
+  maturityNote: string;
   websiteFlag: "none" | "weak" | "ok" | "unknown";
   score: number;
   scoreReasons: string[];
@@ -314,14 +316,30 @@ function scoreLead(p: any, market: { score: number; label: string; reason: strin
   if (rating >= 4.8) { score += 18; reasons.push("Excellent rating"); }
   else if (rating >= 4.5) { score += 14; reasons.push("Strong rating"); }
 
-  // Longevity (oldest review as proxy for age).
-  if (oldestYears !== null) {
-    if (oldestYears >= 5) { score += 22; reasons.push(`~${oldestYears}yr+ history`); }
-    else if (oldestYears >= 3) { score += 14; reasons.push(`~${oldestYears}yr history`); }
-    else { score += 6; reasons.push(`~${oldestYears}yr history (younger)`); }
+  // ---- Maturity read ----
+  // Review COUNT is the reliable "are they established" signal; the oldest
+  // review DATE is only a weak hint (API returns ~5 reviews, rarely the oldest),
+  // so we lean on count and use a confirmed-old review only to upgrade.
+  let maturity: Lead["maturity"];
+  let maturityNote: string;
+  const hasOldReview = oldestYears !== null && oldestYears >= 4;
+
+  if (reviews >= 50 || hasOldReview) {
+    maturity = "Established";
+    maturityNote = hasOldReview
+      ? `Established \u2014 ${reviews} reviews, review history ${oldestYears}+ yrs`
+      : `Established \u2014 ${reviews} reviews (built over years)`;
+    score += 22;
+  } else if (reviews >= 20) {
+    maturity = "Growing";
+    maturityNote = `Growing \u2014 ${reviews} reviews`;
+    score += 14;
   } else {
-    score += 8; reasons.push("Age unknown");
+    maturity = "Newer";
+    maturityNote = `Newer / smaller \u2014 ${reviews} reviews`;
+    score += 6;
   }
+  reasons.push(maturityNote);
 
   // Recent activity (still getting reviews = active).
   if (lastDays !== null) {
@@ -351,6 +369,8 @@ function scoreLead(p: any, market: { score: number; label: string; reason: strin
     reviews,
     oldestReviewYearsAgo: oldestYears,
     lastReviewDaysAgo: lastDays,
+    maturity,
+    maturityNote,
     websiteFlag,
     score,
     scoreReasons: reasons,

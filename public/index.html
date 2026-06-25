@@ -200,7 +200,7 @@
     Hard filters: 4.5★+ · 10+ reviews · physical address · operational.<br>
     Lead score weights longevity, the 20–100 review sweet spot, recent activity, and weak web presence (your opening).<br>
     Market score blends city population (demand) with how open the competition is — high demand + beatable field = goldmine.<br>
-    Business age and search demand are estimated proxies, not exact figures.
+    Maturity reflects review volume (a reliable "established" signal); exact business age isn't published by Google. Market demand is estimated from population.
   </footer>
 </div>
 
@@ -322,6 +322,8 @@
           reviews: lead.reviews,
           oldestReviewYearsAgo: lead.oldestReviewYearsAgo,
           lastReviewDaysAgo: lead.lastReviewDaysAgo,
+          maturity: lead.maturity,
+          maturityNote: lead.maturityNote,
           websiteFlag: lead.websiteFlag,
           score: lead.score,
           scoreReasons: lead.scoreReasons,
@@ -352,8 +354,8 @@
   }
 
   function cardHTML(l, i) {
-    const age = l.oldestReviewYearsAgo !== null ? `~${l.oldestReviewYearsAgo}yr` : "—";
     const last = l.lastReviewDaysAgo !== null ? (l.lastReviewDaysAgo <= 90 ? "<90d" : l.lastReviewDaysAgo + "d") : "—";
+    const matShort = l.maturity || "—";
     const reasons = (l.scoreReasons || []).slice(0,3).map(r => `<span class="flag f-reason">${esc(r)}</span>`).join("");
     return `
     <div class="card">
@@ -370,7 +372,7 @@
       <div class="stats">
         <div class="stat"><b>${l.rating.toFixed(1)}★</b><span>Rating</span></div>
         <div class="stat"><b>${l.reviews}</b><span>Reviews</span></div>
-        <div class="stat"><b>${age}</b><span>Est. age</span></div>
+        <div class="stat"><b>${esc(matShort)}</b><span>Maturity</span></div>
         <div class="stat"><b>${last}</b><span>Last review</span></div>
       </div>
       <div class="flags">

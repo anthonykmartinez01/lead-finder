@@ -76,6 +76,8 @@ export default async (req: Request, _context: Context) => {
   const reviews = body.reviews;
   const age = body.oldestReviewYearsAgo;
   const lastReview = body.lastReviewDaysAgo;
+  const maturity: string = (body.maturity ?? "").toString();
+  const maturityNote: string = (body.maturityNote ?? "").toString();
   const websiteFlag: string = (body.websiteFlag ?? "").toString();
   const score = body.score;
   const scoreReasons: string[] = Array.isArray(body.scoreReasons) ? body.scoreReasons : [];
@@ -89,7 +91,8 @@ export default async (req: Request, _context: Context) => {
     const lines: string[] = ["LEAD FINDER — CALL PREP", ""];
     if (rating != null && reviews != null) lines.push(`Rating: ${rating}\u2605  (${reviews} reviews)`);
     const ageBits: string[] = [];
-    if (age != null) ageBits.push(`~${age} yrs in business (est.)`);
+    if (maturity) ageBits.push(maturityNote || maturity);
+    else if (age != null) ageBits.push(`review history ~${age} yrs (rough)`);
     if (lastReview != null) ageBits.push(lastReview <= 90 ? "active review <90d ago" : `last review ${lastReview}d ago`);
     if (ageBits.length) lines.push(ageBits.join("  \u00b7  "));
     if (websiteFlag) {
