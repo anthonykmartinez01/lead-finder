@@ -35,6 +35,56 @@ async function resolvePipelineStage(token: string, locationId: string): Promise<
   return { pipelineId: pipeline.id, stageId: stage.id };
 }
 
+// Check whether this business already exists as a contact in GHL.
+// Returns the contact id if found, or null. Used to guarantee we never
+// create duplicates or touch an existing contact/opportunity.
+async function findExistingContact(
+  token: string,
+  locationId: string,
+  phone: string,
+  name: string
+): Promise<string | null> {
+  // Try phone first (most reliable unique key), then fall back to name.
+  const queries: string[] = [];
+  if (phone) queries.push(phone);
+  if (name) queries.push(name);
+
+  for (const q of queries) {
+    try {
+      const res = await fetch(`${GHL_BASE}/contacts/search`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          Version: GHL_VERSION,
+          "Content-Type": "application/json",
+          Accept: "application/json",
+        },
+        body: JSON.stringify({ locationId, query: q, pageLimit: 5 }),
+      });
+      if (!res.ok) continue;
+      const data = await res.json();
+      const contacts: any[] = data.contacts ?? [];
+      if (!contacts.length) continue;
+
+      // For a phone query, any hit is a real match. For a name query, require
+      // the name to match closely so we don't false-positive on similar names.
+      if (q === phone) {
+        return contacts[0].id ?? null;
+      } else {
+        const target = name.trim().toLowerCase();
+        const match = contacts.find((c) => {
+          const cn = (c.contactName ?? c.name ?? c.companyName ?? "").toString().trim().toLowerCase();
+          return cn === target;
+        });
+        if (match) return match.id ?? null;
+      }
+    } catch {
+      // ignore and try next query
+    }
+  }
+  return null;
+}
+
 export default async (req: Request, _context: Context) => {
   if (req.method !== "POST") {
     return new Response(JSON.stringify({ error: "POST only" }), { status: 405 });
@@ -78,6 +128,8 @@ export default async (req: Request, _context: Context) => {
   const lastReview = body.lastReviewDaysAgo;
   const maturity: string = (body.maturity ?? "").toString();
   const maturityNote: string = (body.maturityNote ?? "").toString();
+  const ownerName: string = (body.ownerName ?? "").toString();
+  const ownerSource: string = (body.ownerSource ?? "").toString();
   const websiteFlag: string = (body.websiteFlag ?? "").toString();
   const score = body.score;
   const scoreReasons: string[] = Array.isArray(body.scoreReasons) ? body.scoreReasons : [];
@@ -89,6 +141,7 @@ export default async (req: Request, _context: Context) => {
   // Build a readable call-prep note.
   function buildNote(): string {
     const lines: string[] = ["LEAD FINDER — CALL PREP", ""];
+    if (ownerName) lines.push(`Likely owner: ${ownerName} (${ownerSource || "found"})`);
     if (rating != null && reviews != null) lines.push(`Rating: ${rating}\u2605  (${reviews} reviews)`);
     const ageBits: string[] = [];
     if (maturity) ageBits.push(maturityNote || maturity);
@@ -122,7 +175,17 @@ export default async (req: Request, _context: Context) => {
       });
     }
 
-    // 2. Create (or upsert) the contact.
+    // 1b. SAFETY: if this business already exists in GHL, do nothing at all.
+    // No new opportunity, no stage change, no contact update. Just report it.
+    const existingId = await findExistingContact(token, locationId, phone, name);
+    if (existingId) {
+      return new Response(
+        JSON.stringify({ ok: true, alreadyExisted: true, contactId: existingId }),
+        { status: 200, headers: { "content-type": "application/json" } }
+      );
+    }
+
+    // 2. Create the contact (only reached when it's genuinely new).
     const contactRes = await fetch(`${GHL_BASE}/contacts/upsert`, {
       method: "POST",
       headers: {

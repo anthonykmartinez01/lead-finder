@@ -80,6 +80,9 @@
   .card-top { display: flex; justify-content: space-between; gap: 12px; align-items: flex-start; }
   .biz-name { font-size: 18px; font-weight: 800; color: var(--moss-deep); letter-spacing: -0.3px; }
   .biz-addr { font-size: 12.5px; color: var(--mute); margin-top: 2px; }
+  .owner { font-size: 13px; color: var(--moss-deep); margin-top: 4px; font-weight: 600; }
+  .owner b { color: var(--clay); }
+  .owner-src { font-size: 10.5px; color: var(--mute); font-weight: 400; }
 
   .score-badge {
     flex-shrink: 0; text-align: center; min-width: 58px;
@@ -125,6 +128,17 @@
   }
   .ghlbtn:hover { background: #4a32b0; }
   .ghlbtn:disabled { opacity: .6; cursor: wait; }
+  .skipbtn {
+    font-size: 13px; font-weight: 600; padding: 9px 12px;
+    background: transparent; color: var(--mute); border: 1px solid var(--line);
+    border-radius: 9px; cursor: pointer; margin-left: auto;
+  }
+  .skipbtn:hover { background: #f0ede4; color: var(--clay); border-color: #e0c4b8; }
+  .reset-link {
+    font-size: 12px; color: var(--mute); text-decoration: underline;
+    cursor: pointer; background: none; border: none; padding: 4px;
+  }
+  .reset-link:hover { color: var(--clay); }
   .card.sending { opacity: .55; }
   .card.sent {
     animation: slideout .4s forwards;
@@ -201,6 +215,8 @@
     Lead score weights longevity, the 20–100 review sweet spot, recent activity, and weak web presence (your opening).<br>
     Market score blends city population (demand) with how open the competition is — high demand + beatable field = goldmine.<br>
     Maturity reflects review volume (a reliable "established" signal); exact business age isn't published by Google. Market demand is estimated from population.
+    <br><br>
+    <button class="reset-link" id="resetHidden">Reset hidden leads (un-hide everything sent or skipped)</button>
   </footer>
 </div>
 
@@ -223,6 +239,37 @@
 
   q.addEventListener("keydown", e => { if (e.key === "Enter") run(); });
   go.addEventListener("click", run);
+
+  const resetBtn = document.getElementById("resetHidden");
+  if (resetBtn) resetBtn.onclick = () => {
+    if (confirm("Un-hide all leads you've sent or skipped? They'll appear in searches again.")) {
+      try { localStorage.removeItem("lf_sent_leads"); localStorage.removeItem("lf_dismissed_leads"); } catch {}
+      showToast("Hidden leads reset — they'll show up again on your next search.");
+    }
+  };
+
+  // ---- Persistent memory: remember sent + dismissed leads across sessions ----
+  // A stable key per business so we can filter it out of future searches.
+  function leadKey(l) {
+    const phone = (l.phoneRaw || l.phone || "").replace(/[^\d]/g, "");
+    const name = (l.name || "").trim().toLowerCase();
+    return phone ? "p:" + phone : "n:" + name;
+  }
+  function loadSet(storeKey) {
+    try { return new Set(JSON.parse(localStorage.getItem(storeKey) || "[]")); }
+    catch { return new Set(); }
+  }
+  function saveSet(storeKey, set) {
+    try { localStorage.setItem(storeKey, JSON.stringify([...set])); } catch {}
+  }
+  const SENT_KEY = "lf_sent_leads";
+  const DISMISSED_KEY = "lf_dismissed_leads";
+  function markSent(l) { const s = loadSet(SENT_KEY); s.add(leadKey(l)); saveSet(SENT_KEY, s); }
+  function markDismissed(l) { const s = loadSet(DISMISSED_KEY); s.add(leadKey(l)); saveSet(DISMISSED_KEY, s); }
+  function isHidden(l) {
+    const k = leadKey(l);
+    return loadSet(SENT_KEY).has(k) || loadSet(DISMISSED_KEY).has(k);
+  }
 
   function scoreClass(s) { return s >= 75 ? "s-hot" : s >= 55 ? "s-warm" : "s-mild"; }
   function scoreLabel(s) { return s >= 75 ? "HOT" : s >= 55 ? "WARM" : "OK"; }
@@ -263,11 +310,22 @@
   }
 
   function render(data) {
-    const { leads, scanned, count, market } = data;
+    const { scanned, count, market } = data;
+    // Filter out leads already sent to GHL or dismissed (persists across sessions).
+    const allLeads = data.leads || [];
+    const leads = allLeads.filter((l) => !isHidden(l));
+    const hiddenCount = allLeads.length - leads.length;
+
     statusEl.className = "status";
-    statusEl.textContent = `Scanned ${scanned} · ${count} passed filters · sorted best-fit first.`;
+    let statusMsg = `Scanned ${scanned} · ${count} passed filters · sorted best-fit first.`;
+    if (hiddenCount > 0) statusMsg += ` · ${hiddenCount} hidden (already sent or skipped)`;
+    statusEl.textContent = statusMsg;
+
     if (!leads.length) {
-      results.innerHTML = '<div class="empty">No businesses cleared the filters for that search.<br>Try a nearby town or a different trade.</div>';
+      const msg = hiddenCount > 0
+        ? "All leads for this search have already been sent or skipped. Try another city or trade."
+        : "No businesses cleared the filters for that search.<br>Try a nearby town or a different trade.";
+      results.innerHTML = `<div class="empty">${msg}</div>`;
       return;
     }
     const mc = marketClass(market.marketScore ?? market.score);
@@ -286,7 +344,17 @@
       if (btn) btn.onclick = () => copyPhone(l.phoneRaw || l.phone, btn);
       const ghl = document.getElementById("ghl-" + i);
       if (ghl) ghl.onclick = () => sendToGHL(l, i);
+      const skip = document.getElementById("skip-" + i);
+      if (skip) skip.onclick = () => dismissLead(l, i);
     });
+  }
+
+  function dismissLead(lead, i) {
+    markDismissed(lead);
+    const skip = document.getElementById("skip-" + i);
+    const card = skip ? skip.closest(".card") : null;
+    if (card) { card.classList.add("sent"); setTimeout(() => card.remove(), 420); }
+    showToast("Skipped — " + lead.name);
   }
 
   function showToast(msg, isErr) {
@@ -324,6 +392,8 @@
           lastReviewDaysAgo: lead.lastReviewDaysAgo,
           maturity: lead.maturity,
           maturityNote: lead.maturityNote,
+          ownerName: lead.ownerName,
+          ownerSource: lead.ownerSource,
           websiteFlag: lead.websiteFlag,
           score: lead.score,
           scoreReasons: lead.scoreReasons,
@@ -341,8 +411,13 @@
         showToast(data.error || "Couldn't send to GHL", true);
         return;
       }
-      // Success: remove the card from the list.
-      showToast("✓ Sent to GHL — " + lead.name);
+      // Success: remember it so it never reappears, and remove the card.
+      markSent(lead);
+      if (data.alreadyExisted) {
+        showToast("Already in GHL — left it untouched. Hidden from now on.");
+      } else {
+        showToast("✓ Sent to GHL — " + lead.name);
+      }
       card.classList.add("sent");
       setTimeout(() => card.remove(), 420);
     } catch (e) {
@@ -363,6 +438,7 @@
         <div>
           <div class="biz-name">${esc(l.name)}</div>
           <div class="biz-addr">${esc(l.address)}</div>
+          ${l.ownerName ? `<div class="owner">👤 Likely owner: <b>${esc(l.ownerName)}</b> <span class="owner-src">(${esc(l.ownerSource)})</span></div>` : ""}
         </div>
         <div class="score-badge ${scoreClass(l.score)}">
           <div class="num">${l.score}</div>
@@ -385,6 +461,7 @@
         <button class="ghlbtn" id="ghl-${i}">→ Send to GHL</button>
         ${l.mapsUrl ? `<a class="link" href="${esc(l.mapsUrl)}" target="_blank" rel="noopener">Google</a>` : ""}
         ${l.website ? `<a class="link" href="${esc(l.website)}" target="_blank" rel="noopener">Website</a>` : ""}
+        <button class="skipbtn" id="skip-${i}" title="Hide this lead — won't show again">✕ Skip</button>
       </div>
     </div>`;
   }

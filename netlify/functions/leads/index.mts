@@ -13,6 +13,8 @@ interface Lead {
   lastReviewDaysAgo: number | null;
   maturity: "Established" | "Growing" | "Newer";
   maturityNote: string;
+  ownerName: string | null;
+  ownerSource: string | null;
   websiteFlag: "none" | "weak" | "ok" | "unknown";
   score: number;
   scoreReasons: string[];
@@ -43,7 +45,84 @@ function daysBetween(thenMs: number, nowMs: number): number {
   return Math.round((nowMs - thenMs) / (1000 * 60 * 60 * 24));
 }
 
-// ---- US city population data (demand proxy) ----
+// Try to pull an owner's first name from an owner's reply to a review.
+// Owners often sign replies: "Thanks! - Mike" or "- Mike, Owner".
+// Only returns a name when the evidence is reasonably clear (we never guess).
+const NOT_NAMES = new Set([
+  "the", "team", "owner", "manager", "thanks", "thank", "regards", "best",
+  "staff", "management", "customer", "service", "your", "our", "we", "us",
+  "google", "review", "company", "llc", "inc", "co", "and", "for", "you",
+]);
+
+function extractOwnerFromReviews(reviews: any[]): { name: string; source: string } | null {
+  if (!Array.isArray(reviews)) return null;
+  for (const r of reviews) {
+    // The owner's reply lives in different shapes depending on API version.
+    const reply: string =
+      (r.reply?.text ?? r.ownerResponse?.text ?? r.authorReply?.text ?? "")
+        .toString();
+    if (!reply) continue;
+
+    // Look for a sign-off name: "- Mike", "— Sarah", "- John, Owner", "-Tom"
+    const m = reply.match(/[-\u2013\u2014]\s*([A-Z][a-z]{1,15})(?:[\s,]|$)/);
+    if (m) {
+      const candidate = m[1].trim();
+      if (!NOT_NAMES.has(candidate.toLowerCase()) && candidate.length >= 2) {
+        return { name: candidate, source: "review reply" };
+      }
+    }
+    // Also catch "This is Mike, the owner" style phrasing.
+    const m2 = reply.match(/(?:I'?m|this is|owner[, ]+)\s+([A-Z][a-z]{1,15})\b/i);
+    if (m2) {
+      const candidate = m2[1].trim();
+      if (!NOT_NAMES.has(candidate.toLowerCase()) && candidate.length >= 2) {
+        return { name: candidate, source: "review reply" };
+      }
+    }
+  }
+  return null;
+}
+
+// Fetch a business website and try to find an owner name on it.
+// Best-effort, time-limited; returns null on any failure or weak evidence.
+async function extractOwnerFromWebsite(url: string): Promise<{ name: string; source: string } | null> {
+  try {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 3500);
+    const res = await fetch(url, {
+      signal: controller.signal,
+      headers: { "User-Agent": "Mozilla/5.0 (LeadFinder)" },
+      redirect: "follow",
+    });
+    clearTimeout(timer);
+    if (!res.ok) return null;
+    let html = await res.text();
+    html = html.replace(/<script[\s\S]*?<\/script>/gi, " ")
+               .replace(/<style[\s\S]*?<\/style>/gi, " ")
+               .replace(/<[^>]+>/g, " ")
+               .replace(/\s+/g, " ")
+               .slice(0, 40000);
+
+    const patterns = [
+      /(?:owner|founder|owned by|founded by|proprietor)[:\s,]+([A-Z][a-z]{1,15}(?:\s+[A-Z][a-z]{1,15})?)/,
+      /([A-Z][a-z]{1,15}(?:\s+[A-Z][a-z]{1,15})?),?\s+(?:owner|founder|proprietor)\b/,
+      /(?:meet|i'?m|my name is|hi,?\s*i'?m)\s+([A-Z][a-z]{1,15})\b/,
+    ];
+    for (const re of patterns) {
+      const m = html.match(re);
+      if (m) {
+        const candidate = m[1].trim();
+        const first = candidate.split(" ")[0].toLowerCase();
+        if (!NOT_NAMES.has(first) && candidate.length >= 2 && candidate.length <= 32) {
+          return { name: candidate, source: "website" };
+        }
+      }
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
 // ~939 US cities incl. North TX small towns. Population is a free, stable
 // proxy for search demand (true keyword volume needs a paid tool).
 // Numbers are approximate snapshots; fine for relative market ranking.
@@ -287,7 +366,8 @@ function scoreLead(p: any, market: { score: number; label: string; reason: strin
     }
   }
 
-  // Website quality flag (cheap heuristic; deep crawl is a later upgrade).
+  // Try to find the owner's name from owner replies to reviews (free, instant).
+  const ownerFromReview = extractOwnerFromReviews(p.reviews ?? []);
   let websiteFlag: Lead["websiteFlag"] = "unknown";
   if (!website) {
     websiteFlag = "none";
@@ -371,6 +451,8 @@ function scoreLead(p: any, market: { score: number; label: string; reason: strin
     lastReviewDaysAgo: lastDays,
     maturity,
     maturityNote,
+    ownerName: ownerFromReview?.name ?? null,
+    ownerSource: ownerFromReview?.source ?? null,
     websiteFlag,
     score,
     scoreReasons: reasons,
@@ -461,6 +543,20 @@ export default async (req: Request, _context: Context) => {
       .map((p) => scoreLead(p, market))
       .filter((l: Lead | null): l is Lead => l !== null)
       .sort((a, b) => b.score - a.score);
+
+    // For leads that don't already have an owner name from a review reply,
+    // try their website in parallel (best-effort, time-limited). Cap how many
+    // sites we hit so the search stays fast and cheap.
+    const needsScrape = leads.filter((l) => !l.ownerName && l.website).slice(0, 12);
+    await Promise.all(
+      needsScrape.map(async (l) => {
+        const found = await extractOwnerFromWebsite(l.website as string);
+        if (found) {
+          l.ownerName = found.name;
+          l.ownerSource = found.source;
+        }
+      })
+    );
 
     return new Response(
       JSON.stringify({
