@@ -15,6 +15,7 @@ interface Lead {
   maturityNote: string;
   ownerName: string | null;
   ownerSource: string | null;
+  ownerConfidence: "high" | "medium" | "low" | null;
   websiteFlag: "none" | "weak" | "ok" | "unknown";
   score: number;
   scoreReasons: string[];
@@ -81,6 +82,118 @@ function extractOwnerFromReviews(reviews: any[]): { name: string; source: string
     }
   }
   return null;
+}
+
+// Capitalized words that look like names but aren't. Combined with the
+// "must appear in 2+ reviews" rule, this keeps false positives very low.
+const NAME_STOPWORDS = new Set([
+  "the","they","them","their","this","that","these","those","there","then",
+  "we","our","us","it","he","she","his","her","him","you","your","my","me",
+  "and","but","or","so","if","when","what","why","how","who","which",
+  "highly","very","great","good","best","amazing","excellent","awesome","nice",
+  "would","will","was","were","is","are","had","have","has","did","does","do",
+  "thank","thanks","thankyou","recommend","recommended","service","services",
+  "company","team","crew","staff","owner","business","work","works","job","done",
+  "quality","price","prices","time","times","day","days","week","weeks","year","years",
+  "monday","tuesday","wednesday","thursday","friday","saturday","sunday","today",
+  "january","february","march","april","may","june","july","august",
+  "september","october","november","december","summer","winter","spring","fall",
+  "google","yelp","facebook","texas","north","south","east","west",
+  "mr","mrs","ms","dr","sir","maam",
+  "guys","guy","gentleman","man","men","lady","folks","people","everyone","everybody",
+  "definitely","absolutely","professional","professionalism","quick","quickly",
+  "super","really","truly","fast","friendly","honest","fair","reasonable",
+  "they're","i've","i'll","we've","they've","overall","again","also","plus",
+  "here","home","house","place","area","city","town","family","friend","friends",
+  // sentence-starters / connectors that get capitalized mid-review
+  "from","after","before","once","while","since","because","though","although",
+  "however","finally","recently","initially","unfortunately","fortunately",
+  "honestly","basically","literally","simply","currently","previously",
+  "eventually","immediately","throughout","anyway","anyways","yes","no","not",
+  "just","even","still","such","both","each","all","now","when","then","start",
+  "end","to","as","at","on","in","of","by","up","out","over","into","about",
+  "with","within","around","wow","ok","okay","perfect","fantastic","wonderful",
+  "outstanding","exceptional","incredible","beautiful","totally","completely",
+  "extremely","everything","nothing","something","anything","needless","being",
+  "getting","having","doing","looking","coming","going","calling","contacting",
+  // home-services / roofing review vocabulary
+  "roof","roofs","roofing","storm","hail","weather","rain","wind","damage",
+  "insurance","claim","claims","warranty","estimate","estimates","quote","quotes",
+  "pricing","price","cost","scheduling","schedule","scheduled","timing",
+  "communication","response","responsive","install","installation","installed",
+  "repair","repairs","replacement","replaced","completion","completed","finished",
+  "cleanup","workmanship","materials","shingles","gutters","project","projects",
+  "process","experience","contractor","contractors","crew","customer","customers",
+]);
+
+function titleCase(s: string): string {
+  return s.charAt(0).toUpperCase() + s.slice(1).toLowerCase();
+}
+
+// THE KEY SIGNAL: a first name customers mention again and again in their
+// reviews is almost always the owner/operator. We only count a name when it
+// shows up in a clearly personal context ("Mike was great", "ask for Mike",
+// "Mike and his crew"), and we tally how many SEPARATE reviews mention it.
+// Returns the top name plus the evidence so the caller can set confidence.
+function extractOwnerFromReviewText(
+  reviews: any[],
+  businessName: string
+): { name: string; hits: number; total: number; ambiguous: boolean; runnerUp: string | null } | null {
+  if (!Array.isArray(reviews) || !reviews.length) return null;
+
+  // Don't mistake words from the business's own name for a person.
+  const bizTokens = new Set(
+    (businessName || "").toLowerCase().split(/[^a-z]+/).filter(Boolean)
+  );
+
+  const NAME = "([A-Za-z][a-z]{1,14})";
+  const patterns = [
+    new RegExp(`\\b${NAME}\\s+(?:and his|and her|& his|& her|and the team|and his team|and her team)\\b`, "g"),
+    new RegExp(`\\b${NAME}\\s+(?:was|is|did|does|came|come|showed|arrived|installed|fixed|repaired|replaced|quoted|explained|helped|handled|walked|took|gave|made|went)\\b`, "g"),
+    new RegExp(`\\b(?:ask for|asked for|thanks to|thank you|shout out to|shoutout to|kudos to|recommend|call|see)\\s+${NAME}\\b`, "gi"),
+    new RegExp(`\\b${NAME}'s\\s+(?:team|crew|company|guys|work|service)\\b`, "g"),
+    new RegExp(`\\b${NAME},?\\s+(?:the\\s+)?owner\\b`, "gi"),
+  ];
+
+  const tally = new Map<string, number>();
+  let total = 0;
+
+  for (const r of reviews) {
+    const text: string = (r.text?.text ?? r.originalText?.text ?? "").toString();
+    if (!text.trim()) continue;
+    total++;
+
+    // The reviewer's own first name shouldn't count as the owner ("I'm Mike...").
+    const reviewerFirst = ((r.authorAttribution?.displayName ?? "").toString().trim().split(/\s+/)[0] || "").toLowerCase();
+
+    const foundThisReview = new Set<string>();
+    for (const re of patterns) {
+      re.lastIndex = 0;
+      let m: RegExpExecArray | null;
+      while ((m = re.exec(text)) !== null) {
+        const raw = (m[1] || "").trim();
+        if (raw.length < 2) continue;
+        // Real names are capitalized; this rejects lowercase common words
+        // ("roof was…") that the case-insensitive trigger patterns can catch.
+        if (raw[0] < "A" || raw[0] > "Z") continue;
+        const low = raw.toLowerCase();
+        if (NAME_STOPWORDS.has(low)) continue;
+        if (bizTokens.has(low)) continue;
+        if (low === reviewerFirst) continue;
+        foundThisReview.add(titleCase(raw));
+      }
+    }
+    for (const nm of foundThisReview) tally.set(nm, (tally.get(nm) ?? 0) + 1);
+  }
+
+  if (!tally.size) return null;
+  const sorted = [...tally.entries()].sort((a, b) => b[1] - a[1]);
+  const [topName, topHits] = sorted[0];
+  const runner = sorted[1] ?? null;
+  // "Ambiguous" = a second name appears just as often — we genuinely can't tell.
+  const ambiguous = !!runner && runner[1] === topHits;
+
+  return { name: topName, hits: topHits, total, ambiguous, runnerUp: runner ? runner[0] : null };
 }
 
 // Fetch a business website and try to find an owner name on it.
@@ -366,8 +479,44 @@ function scoreLead(p: any, market: { score: number; label: string; reason: strin
     }
   }
 
-  // Try to find the owner's name from owner replies to reviews (free, instant).
-  const ownerFromReview = extractOwnerFromReviews(p.reviews ?? []);
+  // ---- Owner name detection ----
+  // Primary signal (the one we want most): a first name customers mention
+  // consistently across multiple reviews is very likely the owner/operator.
+  // The owner's own review replies are used to corroborate. We never guess —
+  // when the evidence is thin we mark it low confidence so it's clear on the call.
+  const reviewsArr = p.reviews ?? [];
+  const consensus = extractOwnerFromReviewText(reviewsArr, p.displayName?.text ?? "");
+  const reply = extractOwnerFromReviews(reviewsArr);
+
+  let ownerName: string | null = null;
+  let ownerSource: string | null = null;
+  let ownerConfidence: Lead["ownerConfidence"] = null;
+
+  if (consensus) {
+    const crossConfirmed = !!reply && reply.name.toLowerCase() === consensus.name.toLowerCase();
+    ownerName = consensus.name;
+    if (consensus.ambiguous) {
+      ownerConfidence = "low";
+      ownerSource = `unsure — reviewers name both ${consensus.name} and ${consensus.runnerUp}`;
+    } else if (crossConfirmed) {
+      ownerConfidence = "high";
+      ownerSource = `named in ${consensus.hits} review${consensus.hits > 1 ? "s" : ""} + owner reply`;
+    } else if (consensus.hits >= 3) {
+      ownerConfidence = "high";
+      ownerSource = `named in ${consensus.hits} of ${consensus.total} reviews`;
+    } else if (consensus.hits === 2) {
+      ownerConfidence = "medium";
+      ownerSource = `named in 2 of ${consensus.total} reviews`;
+    } else {
+      ownerConfidence = "low";
+      ownerSource = "named in only 1 review — unconfirmed";
+    }
+  } else if (reply) {
+    ownerName = reply.name;
+    ownerConfidence = "medium";
+    ownerSource = "from owner's review reply";
+  }
+
   let websiteFlag: Lead["websiteFlag"] = "unknown";
   if (!website) {
     websiteFlag = "none";
@@ -451,8 +600,9 @@ function scoreLead(p: any, market: { score: number; label: string; reason: strin
     lastReviewDaysAgo: lastDays,
     maturity,
     maturityNote,
-    ownerName: ownerFromReview?.name ?? null,
-    ownerSource: ownerFromReview?.source ?? null,
+    ownerName,
+    ownerSource,
+    ownerConfidence,
     websiteFlag,
     score,
     scoreReasons: reasons,
@@ -554,6 +704,7 @@ export default async (req: Request, _context: Context) => {
         if (found) {
           l.ownerName = found.name;
           l.ownerSource = found.source;
+          l.ownerConfidence = "medium";
         }
       })
     );

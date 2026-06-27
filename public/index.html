@@ -83,6 +83,8 @@
   .owner { font-size: 13px; color: var(--moss-deep); margin-top: 4px; font-weight: 600; }
   .owner b { color: var(--clay); }
   .owner-src { font-size: 10.5px; color: var(--mute); font-weight: 400; }
+  .owner.low { color: var(--mute); font-weight: 500; }
+  .owner.low b { color: var(--moss-deep); }
 
   .score-badge {
     flex-shrink: 0; text-align: center; min-width: 58px;
@@ -394,6 +396,7 @@
           maturityNote: lead.maturityNote,
           ownerName: lead.ownerName,
           ownerSource: lead.ownerSource,
+          ownerConfidence: lead.ownerConfidence,
           websiteFlag: lead.websiteFlag,
           score: lead.score,
           scoreReasons: lead.scoreReasons,
@@ -428,6 +431,16 @@
     }
   }
 
+  function ownerLine(l) {
+    if (!l.ownerName) return "";
+    const conf = l.ownerConfidence || "medium";
+    const label = conf === "low" ? "Possible owner" : "Likely owner";
+    const mark = conf === "high" ? "🟢 " : conf === "low" ? "🟡 " : "";
+    const cls = conf === "low" ? "owner low" : "owner";
+    const src = l.ownerSource ? ` <span class="owner-src">(${esc(l.ownerSource)})</span>` : "";
+    return `<div class="${cls}">👤 ${mark}${label}: <b>${esc(l.ownerName)}</b>${src}</div>`;
+  }
+
   function cardHTML(l, i) {
     const last = l.lastReviewDaysAgo !== null ? (l.lastReviewDaysAgo <= 90 ? "<90d" : l.lastReviewDaysAgo + "d") : "—";
     const matShort = l.maturity || "—";
@@ -438,7 +451,7 @@
         <div>
           <div class="biz-name">${esc(l.name)}</div>
           <div class="biz-addr">${esc(l.address)}</div>
-          ${l.ownerName ? `<div class="owner">👤 Likely owner: <b>${esc(l.ownerName)}</b> <span class="owner-src">(${esc(l.ownerSource)})</span></div>` : ""}
+          ${ownerLine(l)}
         </div>
         <div class="score-badge ${scoreClass(l.score)}">
           <div class="num">${l.score}</div>
