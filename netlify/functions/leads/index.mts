@@ -6,6 +6,9 @@ interface Lead {
   address: string;
   phone: string;
   phoneRaw: string;
+  phoneE164: string | null;
+  lineType: "mobile" | "landline" | "voip" | "unknown" | null;
+  carrierName: string | null;
   website: string | null;
   rating: number;
   reviews: number;
@@ -44,6 +47,50 @@ const FIELD_MASK = [
 
 function daysBetween(thenMs: number, nowMs: number): number {
   return Math.round((nowMs - thenMs) / (1000 * 60 * 60 * 24));
+}
+
+// Build an E.164 number (+1XXXXXXXXXX) for the Twilio lookup. Prefers Google's
+// international number, which is already nearly E.164. Returns null if unusable.
+function toE164(national: string, intl: string): string | null {
+  const raw = (intl || national || "").replace(/[^\d+]/g, "");
+  if (!raw) return null;
+  if (raw.startsWith("+")) return raw;
+  const digits = raw.replace(/\D/g, "");
+  if (digits.length === 11 && digits.startsWith("1")) return "+" + digits;
+  if (digits.length === 10) return "+1" + digits;
+  return digits.length >= 8 ? "+" + digits : null;
+}
+
+// Ask Twilio whether a number is a mobile, landline, or VoIP line. A mobile is
+// the best lead (direct shot at the owner). Best-effort + time-limited; returns
+// null on any failure so a slow/failed lookup never breaks the search.
+async function lookupLineType(
+  e164: string,
+  sid: string,
+  token: string
+): Promise<{ type: Lead["lineType"]; carrier: string | null } | null> {
+  try {
+    const url = `https://lookups.twilio.com/v2/PhoneNumbers/${encodeURIComponent(e164)}?Fields=line_type_intelligence`;
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 4500);
+    const res = await fetch(url, {
+      signal: controller.signal,
+      headers: { Authorization: "Basic " + btoa(`${sid}:${token}`) },
+    });
+    clearTimeout(timer);
+    if (!res.ok) return null;
+    const data = await res.json();
+    const lti = data.line_type_intelligence;
+    if (!lti || !lti.type) return null;
+    const t = String(lti.type).toLowerCase();
+    let type: Lead["lineType"] = "unknown";
+    if (t === "mobile") type = "mobile";
+    else if (t.includes("voip")) type = "voip";
+    else if (t === "landline" || t === "tollfree" || t === "premium" || t === "shared_cost" || t === "uan") type = "landline";
+    return { type, carrier: lti.carrier_name ?? null };
+  } catch {
+    return null;
+  }
 }
 
 // Try to pull an owner's first name from an owner's reply to a review.
@@ -593,6 +640,9 @@ function scoreLead(p: any, market: { score: number; label: string; reason: strin
     address,
     phone: p.nationalPhoneNumber ?? p.internationalPhoneNumber ?? "",
     phoneRaw,
+    phoneE164: toE164(p.nationalPhoneNumber ?? "", p.internationalPhoneNumber ?? ""),
+    lineType: null,
+    carrierName: null,
     website,
     rating,
     reviews,
@@ -709,10 +759,50 @@ export default async (req: Request, _context: Context) => {
       })
     );
 
+    // ---- Phone line-type: mobile vs landline (needs Twilio credentials) ----
+    // A mobile number is a far better lead — a direct shot at the owner instead
+    // of a receptionist or office line — so confirmed mobiles get boosted to the
+    // top. Entirely skipped (no cost, no change) if Twilio isn't configured.
+    let landlineHidden = 0;
+    const twSid = Netlify.env.get("TWILIO_ACCOUNT_SID");
+    const twToken = Netlify.env.get("TWILIO_AUTH_TOKEN");
+    if (twSid && twToken) {
+      await Promise.all(
+        leads.map(async (l) => {
+          if (!l.phoneE164) return;
+          const lt = await lookupLineType(l.phoneE164, twSid, twToken);
+          if (!lt) return;
+          l.lineType = lt.type;
+          l.carrierName = lt.carrier;
+          if (lt.type === "mobile") {
+            l.score = Math.min(100, l.score + 20);
+            l.scoreReasons.unshift("📱 Mobile/cell — direct line to owner");
+          } else if (lt.type === "voip") {
+            l.score = Math.min(100, l.score + 8);
+            l.scoreReasons.unshift("🔀 VoIP — may ring the owner's cell");
+          }
+          // Landlines are removed below; no score change needed for them.
+        })
+      );
+
+      // Drop landline-only leads entirely — they almost always reach an
+      // office/receptionist, which isn't worth the call. Mobile, VoIP and
+      // unknown line types are kept (any of them may reach the owner).
+      const before = leads.length;
+      for (let i = leads.length - 1; i >= 0; i--) {
+        if (leads[i].lineType === "landline") leads.splice(i, 1);
+      }
+      landlineHidden = before - leads.length;
+
+      // Re-sort so the boosted mobile/VoIP leads rise to the top.
+      leads.sort((a, b) => b.score - a.score);
+    }
+
     return new Response(
       JSON.stringify({
         count: leads.length,
         scanned: places.length,
+        landlineHidden,
         market,
         leads,
       }),

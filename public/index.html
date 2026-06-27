@@ -107,6 +107,9 @@
   .f-weak { background: #faf2dd; color: #8a6a16; }
   .f-ok { background: #e8efe9; color: var(--moss-deep); }
   .f-reason { background: #eef0f2; color: var(--mute); font-weight: 600; }
+  .f-mobile { background: #dff3e6; color: #1c7a43; }
+  .f-landline { background: #fbe9e1; color: var(--clay); }
+  .f-voip { background: #eef0f2; color: var(--mute); }
 
   .actions { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
   .copybtn {
@@ -320,6 +323,7 @@
 
     statusEl.className = "status";
     let statusMsg = `Scanned ${scanned} · ${count} passed filters · sorted best-fit first.`;
+    if (data.landlineHidden > 0) statusMsg += ` · ${data.landlineHidden} landline-only dropped`;
     if (hiddenCount > 0) statusMsg += ` · ${hiddenCount} hidden (already sent or skipped)`;
     statusEl.textContent = statusMsg;
 
@@ -397,6 +401,8 @@
           ownerName: lead.ownerName,
           ownerSource: lead.ownerSource,
           ownerConfidence: lead.ownerConfidence,
+          lineType: lead.lineType,
+          carrierName: lead.carrierName,
           websiteFlag: lead.websiteFlag,
           score: lead.score,
           scoreReasons: lead.scoreReasons,
@@ -429,6 +435,13 @@
       ghl.textContent = "→ Send to GHL";
       showToast("Network error sending to GHL", true);
     }
+  }
+
+  function lineTypeBadge(l) {
+    if (!l.lineType || l.lineType === "unknown") return "";
+    if (l.lineType === "mobile") return `<span class="flag f-mobile">📱 Mobile${l.carrierName ? " · " + esc(l.carrierName) : ""}</span>`;
+    if (l.lineType === "voip") return `<span class="flag f-voip">🔀 VoIP · may ring owner</span>`;
+    return `<span class="flag f-landline">☎ Landline</span>`;
   }
 
   function ownerLine(l) {
@@ -466,6 +479,7 @@
       </div>
       <div class="flags">
         <span class="market-pill mp-${marketClass(l.marketScore)}">📍 ${esc(l.marketLabel)} market · ${l.marketScore}</span>
+        ${lineTypeBadge(l)}
         <span class="flag ${flagClass(l.websiteFlag)}">${flagText(l.websiteFlag)}</span>
         ${reasons}
       </div>

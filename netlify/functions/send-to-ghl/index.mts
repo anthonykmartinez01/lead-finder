@@ -141,6 +141,8 @@ export default async (req: Request, _context: Context) => {
   const ownerName: string = (body.ownerName ?? "").toString();
   const ownerSource: string = (body.ownerSource ?? "").toString();
   const ownerConfidence: string = (body.ownerConfidence ?? "").toString();
+  const lineType: string = (body.lineType ?? "").toString();
+  const carrierName: string = (body.carrierName ?? "").toString();
   const websiteFlag: string = (body.websiteFlag ?? "").toString();
   const score = body.score;
   const scoreReasons: string[] = Array.isArray(body.scoreReasons) ? body.scoreReasons : [];
@@ -165,6 +167,13 @@ export default async (req: Request, _context: Context) => {
     } else {
       lines.push(`OWNER: not identified from reviews (no consistent name found)`);
       lines.push("");
+    }
+    if (lineType) {
+      const lt = lineType === "mobile" ? `\ud83d\udcf1 MOBILE/CELL${carrierName ? ` (${carrierName})` : ""} \u2014 good shot at the owner directly`
+        : lineType === "landline" ? "\u260e Landline \u2014 may reach a receptionist/office"
+        : lineType === "voip" ? "🔀 VoIP — may ring the owner's cell (Google Voice/app) or an office"
+        : "";
+      if (lt) lines.push(`Phone type: ${lt}`);
     }
     if (rating != null && reviews != null) lines.push(`Rating: ${rating}\u2605  (${reviews} reviews)`);
     const ageBits: string[] = [];
