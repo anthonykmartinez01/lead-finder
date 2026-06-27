@@ -121,6 +121,16 @@ export default async (req: Request, _context: Context) => {
     return new Response(JSON.stringify({ error: "Missing business name" }), { status: 400 });
   }
 
+  // Go High Level requires a phone OR email to create a contact. This tool only
+  // has phone numbers, so a business with no phone on Google can't be imported.
+  // Catch it here and explain plainly instead of showing a vague GHL error.
+  if (!phone) {
+    return new Response(
+      JSON.stringify({ error: `${name} has no phone number — Go High Level needs a phone or email to save a contact, so this lead can't be imported. Hit Skip.` }),
+      { status: 422, headers: { "content-type": "application/json" } }
+    );
+  }
+
   // Extra detail for the call-prep note (all optional).
   const rating = body.rating;
   const reviews = body.reviews;
@@ -130,6 +140,7 @@ export default async (req: Request, _context: Context) => {
   const maturityNote: string = (body.maturityNote ?? "").toString();
   const ownerName: string = (body.ownerName ?? "").toString();
   const ownerSource: string = (body.ownerSource ?? "").toString();
+  const ownerConfidence: string = (body.ownerConfidence ?? "").toString();
   const websiteFlag: string = (body.websiteFlag ?? "").toString();
   const score = body.score;
   const scoreReasons: string[] = Array.isArray(body.scoreReasons) ? body.scoreReasons : [];
@@ -141,7 +152,20 @@ export default async (req: Request, _context: Context) => {
   // Build a readable call-prep note.
   function buildNote(): string {
     const lines: string[] = ["LEAD FINDER — CALL PREP", ""];
-    if (ownerName) lines.push(`Likely owner: ${ownerName} (${ownerSource || "found"})`);
+    if (ownerName) {
+      const label = ownerConfidence === "low" ? "POSSIBLE OWNER" : "LIKELY OWNER";
+      const confText =
+        ownerConfidence === "high" ? "HIGH confidence — consistently named across reviews"
+        : ownerConfidence === "low" ? "LOW confidence — NOT verified, double-check on the call"
+        : "MEDIUM confidence — named in a couple reviews";
+      lines.push(`${label}: ${ownerName}`);
+      lines.push(`  Verification: ${confText}`);
+      if (ownerSource) lines.push(`  Basis: ${ownerSource}`);
+      lines.push("");
+    } else {
+      lines.push(`OWNER: not identified from reviews (no consistent name found)`);
+      lines.push("");
+    }
     if (rating != null && reviews != null) lines.push(`Rating: ${rating}\u2605  (${reviews} reviews)`);
     const ageBits: string[] = [];
     if (maturity) ageBits.push(maturityNote || maturity);
@@ -207,8 +231,12 @@ export default async (req: Request, _context: Context) => {
 
     if (!contactRes.ok) {
       const t = await contactRes.text();
+      // Translate GHL's "needs a phone or email" rejection into plain language.
+      const friendly = /at least one of number, email/i.test(t)
+        ? `${name} has no phone or email Go High Level can use, so it can't be imported. Hit Skip.`
+        : "Couldn't create contact in GHL";
       return new Response(
-        JSON.stringify({ error: "Couldn't create contact in GHL", detail: t.slice(0, 200) }),
+        JSON.stringify({ error: friendly, detail: t.slice(0, 200) }),
         { status: 502, headers: { "content-type": "application/json" } }
       );
     }
